@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "97995534888",
+    "project_id": "beatflash",
+    "storage_bucket": "beatflash.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:97995534888:android:c781ff50b0601dc1efbb1d",
+        "android_client_info": {
+          "package_name": "com.act99.tf_audio"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "97995534888-p0l4n01stgia7denpkm1e9f08fp7k3up.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.act99.tf_audio",
+            "certificate_hash": "ae5f36868af2938833ffafcdfbf48345b2e91155"
+          }
+        },
+        {
+          "client_id": "97995534888-9rbqjofa178le5pv6ivqtu92i96odobv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARiPluyUPxZRk79J5nD_KRcbN7yjzE4dY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "97995534888-9rbqjofa178le5pv6ivqtu92i96odobv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

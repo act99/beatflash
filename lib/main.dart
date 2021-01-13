@@ -2,17 +2,19 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:core';
 import 'dart:io';
-
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/animation.dart';
 import 'package:flutter/rendering.dart';
-
 import 'package:mic_stream/mic_stream.dart';
-import 'package:noise_meter/noise_meter.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:screen/screen.dart';
+import 'package:tf_audio/admob.dart';
+import 'package:tf_audio/decibel_recognization.dart';
 import 'package:torch_compat/torch_compat.dart';
+import 'package:wakelock/wakelock.dart';
 
 enum Command {
   start,
@@ -22,7 +24,10 @@ enum Command {
 
 const AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
 
-void main() => runApp(MyApp());
+void main() {
+  runApp(MyApp());
+  Screen.keepOn(true);
+}
 
 class MyApp extends StatefulWidget {
   @override
@@ -30,20 +35,12 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  NoiseMeter _noiseMeter;
-  Function _onError;
-
-  @override
-  void initState() {
-    super.initState();
-    _noiseMeter = new NoiseMeter(_onError);
-  }
-
   @override
   Widget build(BuildContext context) {
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(),
       home: DroptheBeat(),
     );
@@ -60,9 +57,9 @@ class _DroptheBeatState extends State<DroptheBeat>
   Stream stream;
   StreamSubscription listener;
   List<int> currentSamples;
-
   // Refreshes the Widget for every possible tick to force a rebuild of the sound wave
   AnimationController controller;
+  // AppLifecycleState appLifecycleState;
 
   Color _iconColor = Colors.white;
   bool isRecording = false;
@@ -70,15 +67,31 @@ class _DroptheBeatState extends State<DroptheBeat>
   bool isActive;
   DateTime startTime;
 
-  int page = 0;
-  List state = ["SoundWavePage", "InformationPage"];
+  // noise decibel
+  StreamSubscription<NoiseReading> _noiseSubscription;
+  NoiseMeter _noiseMeter;
+  NoiseReading noiseReadingData;
+  var totalDecibelListB = [];
+  var decibelAverageB;
+  bool _isRecording = false;
 
+  // microphone values
   var average;
   var allValue;
   var max;
   var min;
   var decibel;
   var waveform;
+
+  // admobManage
+  AdmobManager admob = AdmobManager();
+
+  // @override
+  // void didChangeAppLifecycleState(AppLifecycleState state) {
+  //   setState(() {
+  //     appLifecycleState = state;
+  //   });
+  // }
 
   @override
   void initState() {
@@ -88,11 +101,80 @@ class _DroptheBeatState extends State<DroptheBeat>
     setState(() {
       initPlatformState();
     });
+    _noiseMeter = new NoiseMeter(onError);
+    admob.init();
+    admob.showBannerAd();
   }
 
-  // void _controlPage(int index) => setState(() => page = index);
+  // Decibel void
+  void onError(PlatformException e) {
+    print(e.toString());
+    _isRecording = false;
+  }
 
-  // Responsible for switching between recording / idle state
+  void onData(NoiseReading noiseReading) {
+    this.setState(() {
+      if (!this._isRecording) {
+        this._isRecording = true;
+      }
+    });
+    print(noiseReading.toString());
+    setState(() {
+      noiseReadingData = noiseReading;
+    });
+
+    totalDecibelListB.add(noiseReadingData.bValue);
+    var resultB = totalDecibelListB.map((e) => e).reduce((a, b) => a + b) /
+        totalDecibelListB.length;
+
+    decibelAverageB = resultB;
+
+    print('1. $resultB');
+    flareBombIng(noiseReadingData.bValue, resultB);
+  }
+
+  // void flareBomb(double bvalue, double bresult) {
+  //   if (bvalue > bresult) {
+  //     TorchCompat.turnOn();
+  //     TorchCompat.turnOff();
+  //   } else {
+  //     TorchCompat.turnOff();
+  //   }
+  // }
+
+  void flareBombIng(double bvalue, double bresult) {
+    bvalue > bresult ? TorchCompat.turnOff() : TorchCompat.turnOn();
+  }
+
+  void start() async {
+    try {
+      _noiseSubscription = _noiseMeter.noiseStream.listen(onData);
+      setState(() {
+        Wakelock.enabled;
+      });
+    } catch (err) {
+      print(err);
+    }
+  }
+
+  void stop() async {
+    try {
+      if (_noiseSubscription != null) {
+        _noiseSubscription.cancel();
+        _noiseSubscription = null;
+      }
+      setState(() {
+        Wakelock.disable();
+      });
+      this.setState(() {
+        this._isRecording = false;
+      });
+    } catch (err) {
+      print('stopRecorder error: $err');
+    }
+  }
+
+  // microphone void
   void _controlMicStream({Command command: Command.change}) async {
     switch (command) {
       case Command.change:
@@ -100,9 +182,15 @@ class _DroptheBeatState extends State<DroptheBeat>
         break;
       case Command.start:
         _startListening();
+        start();
         break;
       case Command.stop:
         _stopListening();
+        stop();
+        totalDecibelListB.clear();
+        noiseReadingData = null;
+        setState(() {});
+        TorchCompat.turnOff();
         break;
     }
   }
@@ -111,6 +199,16 @@ class _DroptheBeatState extends State<DroptheBeat>
       !isRecording ? await _startListening() : _stopListening();
 
   Future<bool> _startListening() async {
+    if (await Permission.contacts.request().isGranted) {
+      // Either the permission was already granted before or the user just granted it.
+    }
+
+// You can request multiple permissions at once.
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.microphone,
+    ].request();
+    print(statuses[Permission.location]);
+
     if (isRecording) return false;
     // if this is the first time invoking the microphone() method to get the stream, we don't yet have access to the sampleRate and bitDepth properties
     stream = await MicStream.microphone(
@@ -177,7 +275,7 @@ class _DroptheBeatState extends State<DroptheBeat>
     if (!isRecording) return false;
     print("Stop Listening to the microphone");
     listener.cancel();
-
+    TorchCompat.turnOff();
     setState(() {
       isRecording = false;
       currentSamples = null;
@@ -206,8 +304,15 @@ class _DroptheBeatState extends State<DroptheBeat>
   }
 
   Color _getBgColor() => (isRecording) ? Colors.cyan : Colors.cyan;
-  Icon _getIcon() =>
-      (isRecording) ? Icon(Icons.stop) : Icon(Icons.keyboard_voice);
+  Icon _getIcon() => (isRecording)
+      ? Icon(
+          Icons.stop,
+          color: Colors.red,
+        )
+      : Icon(
+          Icons.play_arrow,
+          color: Colors.white,
+        );
 
   @override
   Widget build(BuildContext context) {
@@ -216,16 +321,23 @@ class _DroptheBeatState extends State<DroptheBeat>
     double height = screenSize.height;
     return Scaffold(
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: FloatingActionButton(
-        onPressed: _controlMicStream,
-        child: _getIcon(),
-        foregroundColor: _iconColor,
-        backgroundColor: _getBgColor(),
-        tooltip: (isRecording) ? "Stop recording" : "Start recording",
+      floatingActionButton: Container(
+        margin: isRecording
+            ? EdgeInsets.only(bottom: height * 0.1)
+            : EdgeInsets.only(bottom: height * 0.4),
+        child: FloatingActionButton(
+          onPressed: _controlMicStream,
+          child: _getIcon(),
+          foregroundColor: _iconColor,
+          backgroundColor: _getBgColor(),
+          tooltip: (isRecording) ? "Stop recording" : "Start recording",
+        ),
       ),
-      body: CustomPaint(
-        painter: WavePainter(waveform, _getBgColor(), context),
-      ),
+      body: isRecording
+          ? CustomPaint(
+              painter: WavePainter(waveform, _getBgColor(), context),
+            )
+          : StartScreen(),
     );
   }
 
@@ -251,7 +363,40 @@ class _DroptheBeatState extends State<DroptheBeat>
     listener.cancel();
     controller.dispose();
     WidgetsBinding.instance.removeObserver(this);
+    TorchCompat.turnOff();
+    TorchCompat.dispose();
+    Wakelock.disable();
+
     super.dispose();
+  }
+}
+
+class StartScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    Size screenSize = MediaQuery.of(context).size;
+    double width = screenSize.width;
+    double height = screenSize.height;
+    return SafeArea(
+      child: Column(
+        children: [
+          SizedBox(
+            height: height * 0.3,
+          ),
+          Container(
+            width: width * 1,
+            child: Text(
+              'Drop the beat Bomb!',
+              style: TextStyle(
+                color: Colors.cyan,
+                fontSize: height * 0.038,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

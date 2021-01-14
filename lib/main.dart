@@ -1,18 +1,18 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:core';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/animation.dart';
 import 'package:flutter/rendering.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:mic_stream/mic_stream.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:screen/screen.dart';
 import 'package:tf_audio/admob.dart';
 import 'package:tf_audio/decibel_recognization.dart';
+import 'package:tf_audio/information_screen.dart';
 import 'package:torch_compat/torch_compat.dart';
 import 'package:wakelock/wakelock.dart';
 
@@ -26,6 +26,7 @@ const AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
 
 void main() {
   runApp(MyApp());
+
   Screen.keepOn(true);
 }
 
@@ -42,7 +43,7 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(),
-      home: DroptheBeat(),
+      home: StartScreen(),
     );
   }
 }
@@ -62,7 +63,7 @@ class _DroptheBeatState extends State<DroptheBeat>
   // AppLifecycleState appLifecycleState;
 
   Color _iconColor = Colors.white;
-  bool isRecording = false;
+  bool isRecording = true;
   bool memRecordingState = false;
   bool isActive;
   DateTime startTime;
@@ -82,9 +83,7 @@ class _DroptheBeatState extends State<DroptheBeat>
   var min;
   var decibel;
   var waveform;
-
   // admobManage
-  AdmobManager admob = AdmobManager();
 
   // @override
   // void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -95,15 +94,14 @@ class _DroptheBeatState extends State<DroptheBeat>
 
   @override
   void initState() {
-    print("Init application");
+    // print("Init application");
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     setState(() {
       initPlatformState();
     });
     _noiseMeter = new NoiseMeter(onError);
-    admob.init();
-    admob.showBannerAd();
+    _startListening();
   }
 
   // Decibel void
@@ -118,7 +116,7 @@ class _DroptheBeatState extends State<DroptheBeat>
         this._isRecording = true;
       }
     });
-    print(noiseReading.toString());
+    // print(noiseReading.toString());
     setState(() {
       noiseReadingData = noiseReading;
     });
@@ -129,7 +127,7 @@ class _DroptheBeatState extends State<DroptheBeat>
 
     decibelAverageB = resultB;
 
-    print('1. $resultB');
+    // print('1. $resultB');
     flareBombIng(noiseReadingData.bValue, resultB);
   }
 
@@ -148,10 +146,11 @@ class _DroptheBeatState extends State<DroptheBeat>
 
   void start() async {
     try {
+      setState(() {});
+
       _noiseSubscription = _noiseMeter.noiseStream.listen(onData);
-      setState(() {
-        Wakelock.enabled;
-      });
+
+      setState(() {});
     } catch (err) {
       print(err);
     }
@@ -163,40 +162,15 @@ class _DroptheBeatState extends State<DroptheBeat>
         _noiseSubscription.cancel();
         _noiseSubscription = null;
       }
-      setState(() {
-        Wakelock.disable();
-      });
+
       this.setState(() {
         this._isRecording = false;
       });
+      setState(() {});
     } catch (err) {
       print('stopRecorder error: $err');
     }
   }
-
-  // microphone void
-  void _controlMicStream({Command command: Command.change}) async {
-    switch (command) {
-      case Command.change:
-        _changeListening();
-        break;
-      case Command.start:
-        _startListening();
-        start();
-        break;
-      case Command.stop:
-        _stopListening();
-        stop();
-        totalDecibelListB.clear();
-        noiseReadingData = null;
-        setState(() {});
-        TorchCompat.turnOff();
-        break;
-    }
-  }
-
-  Future<bool> _changeListening() async =>
-      !isRecording ? await _startListening() : _stopListening();
 
   Future<bool> _startListening() async {
     if (await Permission.contacts.request().isGranted) {
@@ -209,17 +183,15 @@ class _DroptheBeatState extends State<DroptheBeat>
     ].request();
     print(statuses[Permission.location]);
 
-    if (isRecording) return false;
-    // if this is the first time invoking the microphone() method to get the stream, we don't yet have access to the sampleRate and bitDepth properties
+    // if (isRecording) return false;
     stream = await MicStream.microphone(
         audioSource: AudioSource.DEFAULT,
         sampleRate: 16000,
         channelConfig: ChannelConfig.CHANNEL_IN_MONO,
         audioFormat: AUDIO_FORMAT);
-    // after invoking the method for the first time, though, these will be available;
-    // It is not necessary to setup a listener first, the stream only needs to be returned first
-    print(
-        "Start Listening to the microphone, sample rate is ${await MicStream.sampleRate}, bit depth is ${await MicStream.bitDepth}");
+
+    // print(
+    //     "Start Listening to the microphone, sample rate is ${await MicStream.sampleRate}, bit depth is ${await MicStream.bitDepth}");
 
     setState(() {
       isRecording = true;
@@ -262,11 +234,11 @@ class _DroptheBeatState extends State<DroptheBeat>
         TorchCompat.turnOff();
       }
       // print(currentSamples);
-      print(waveform);
-      print('decibel = $decibel');
-      print(max);
-      print(min);
-      print(average);
+      // print(waveform);
+      // print('decibel = $decibel');
+      // print(max);
+      // print(min);
+      // print(average);
     });
     return true;
   }
@@ -326,7 +298,13 @@ class _DroptheBeatState extends State<DroptheBeat>
             ? EdgeInsets.only(bottom: height * 0.1)
             : EdgeInsets.only(bottom: height * 0.4),
         child: FloatingActionButton(
-          onPressed: _controlMicStream,
+          onPressed: () {
+            Navigator.pop(context);
+            // Navigator.pushReplacement(
+            //     context,
+            //     MaterialPageRoute(
+            //         builder: (BuildContext context) => StartScreen()));
+          },
           child: _getIcon(),
           foregroundColor: _iconColor,
           backgroundColor: _getBgColor(),
@@ -334,67 +312,153 @@ class _DroptheBeatState extends State<DroptheBeat>
         ),
       ),
       body: isRecording
-          ? CustomPaint(
-              painter: WavePainter(waveform, _getBgColor(), context),
+          ? SafeArea(
+              child: Stack(
+                children: [
+                  Container(
+                    alignment: Alignment.center,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: height * 0.1,
+                        ),
+                        Text(
+                          '화면을 유지해주세요.',
+                          style: TextStyle(fontSize: height * 0.028),
+                        ),
+                        Text('Keep the Screen.'),
+                      ],
+                    ),
+                  ),
+                  CustomPaint(
+                    painter: WavePainter(waveform, _getBgColor(), context),
+                  ),
+                ],
+              ),
             )
           : StartScreen(),
     );
   }
 
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   if (state == AppLifecycleState.resumed) {
-  //     isActive = true;
-  //     print("Resume app");
-
-  //     _controlMicStream(
-  //         command: memRecordingState ? Command.start : Command.stop);
-  //   } else if (isActive) {
-  //     memRecordingState = isRecording;
-  //     _controlMicStream(command: Command.stop);
-
-  //     print("Pause app");
-  //     isActive = false;
-  //   }
-  // }
-
   @override
   void dispose() {
-    listener.cancel();
     controller.dispose();
     WidgetsBinding.instance.removeObserver(this);
+
+    listener.cancel();
     TorchCompat.turnOff();
-    TorchCompat.dispose();
+
+    isRecording = false;
+    currentSamples = null;
+    startTime = null;
+    waveform = null;
+
+    stop();
+    totalDecibelListB.clear();
+    noiseReadingData = null;
+
     Wakelock.disable();
 
+    TorchCompat.dispose();
     super.dispose();
   }
 }
 
-class StartScreen extends StatelessWidget {
+class StartScreen extends StatefulWidget {
+  @override
+  _StartScreenState createState() => _StartScreenState();
+}
+
+class _StartScreenState extends State<StartScreen> {
+  AdmobManager admob = AdmobManager();
+  DateTime currentBackPressTime;
+  Color _iconColor = Colors.white;
+  Color _getBgColor() => Colors.cyan;
+
+  Icon _getIcon() => Icon(
+        Icons.play_arrow,
+        color: Colors.white,
+      );
+
+  Future<bool> onWillPop() {
+    DateTime now = DateTime.now();
+    if (currentBackPressTime == null ||
+        now.difference(currentBackPressTime) > Duration(seconds: 2)) {
+      currentBackPressTime = now;
+      Fluttertoast.showToast(msg: '두 번 누르면 나가집니다.');
+      return Future.value(false);
+    }
+    return Future.value(true);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    admob.init();
+    admob.showBannerAd();
+  }
+
+  @override
+  void dispose() {
+    admob.disposeBannerAd();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     Size screenSize = MediaQuery.of(context).size;
     double width = screenSize.width;
     double height = screenSize.height;
-    return SafeArea(
-      child: Column(
-        children: [
-          SizedBox(
-            height: height * 0.3,
-          ),
-          Container(
-            width: width * 1,
-            child: Text(
-              'Drop the beat Bomb!',
-              style: TextStyle(
-                color: Colors.cyan,
-                fontSize: height * 0.038,
+    return Scaffold(
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: Container(
+        margin: EdgeInsets.only(bottom: height * 0.4),
+        child: FloatingActionButton(
+          onPressed: () {
+            Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (BuildContext context) => DroptheBeat()));
+          },
+          child: _getIcon(),
+          foregroundColor: _iconColor,
+          backgroundColor: _getBgColor(),
+        ),
+      ),
+      body: WillPopScope(
+        onWillPop: onWillPop,
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: Container(
+                  width: width * 0.2,
+                  height: width * 0.2,
+                  child: RaisedButton(
+                    elevation: 0.0,
+                    color: Color(0xff303030),
+                    onPressed: () {
+                      Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (BuildContext context) =>
+                                  InformationScreen()));
+                    },
+                    child: Icon(Icons.info),
+                  ),
+                ),
               ),
-              textAlign: TextAlign.center,
-            ),
+              SizedBox(
+                height: height * 0.15,
+              ),
+              Container(
+                height: height * 0.2,
+                child: Image.asset('assets/start.png'),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
